@@ -1,11 +1,13 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { getProviderStatus } from "@/lib/payment";
+import { getBookkeepingSettings, setBookkeepingSettings } from "@/lib/app-settings";
 
 export async function GET() {
   try {
     await requireUser();
     const payments = getProviderStatus();
+    const bookkeeping = await getBookkeepingSettings();
     return NextResponse.json({
       db: {
         provider: "SQL Server",
@@ -17,6 +19,29 @@ export async function GET() {
         publicId: payments.publicId,
         available: payments.available,
       },
+      bookkeeping,
     });
+  } catch (e) { if (e instanceof Response) return e; throw e; }
+}
+
+export async function PUT(req: NextRequest) {
+  try {
+    await requireUser();
+    const b = await req.json();
+    const email = typeof b.email === "string" ? b.email.trim() : undefined;
+    const cc = typeof b.cc === "string" ? b.cc.trim() : undefined;
+    const businessName = typeof b.businessName === "string" ? b.businessName.trim() : undefined;
+    const businessHp = typeof b.businessHp === "string" ? b.businessHp.trim() : undefined;
+
+    const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (email !== undefined && email && !emailRe.test(email)) {
+      return NextResponse.json({ error: "אימייל הנה״ח לא תקין" }, { status: 400 });
+    }
+    if (cc !== undefined && cc && !emailRe.test(cc)) {
+      return NextResponse.json({ error: "אימייל CC לא תקין" }, { status: 400 });
+    }
+
+    await setBookkeepingSettings({ email, cc, businessName, businessHp });
+    return NextResponse.json({ ok: true, bookkeeping: await getBookkeepingSettings() });
   } catch (e) { if (e instanceof Response) return e; throw e; }
 }

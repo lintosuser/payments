@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Database, KeyRound, Download, Upload, FileSpreadsheet, ShieldCheck, Percent } from "lucide-react";
+import { Database, KeyRound, Download, Upload, FileSpreadsheet, ShieldCheck, Percent, Mail } from "lucide-react";
 
 const VAT_STORAGE_KEY = "lintos.vatPercent";
 export const DEFAULT_VAT_PERCENT = 18;
@@ -21,6 +21,7 @@ export function getVatPercent(): number {
 
 type ProviderName = "tranzila" | "yaadpay";
 
+type Bookkeeping = { businessName: string; businessHp: string; email: string; cc: string };
 type Status = {
   db: { url: string; provider: string; configured: boolean };
   payments: {
@@ -29,6 +30,7 @@ type Status = {
     publicId: string;
     available: { name: ProviderName; configured: boolean }[];
   };
+  bookkeeping?: Bookkeeping;
 };
 
 const PROVIDER_LABEL: Record<ProviderName, string> = {
@@ -43,15 +45,33 @@ export function SettingsTab() {
   const [password, setPassword] = useState("");
   const [importing, setImporting] = useState(false);
   const [vatInput, setVatInput] = useState<string>(String(DEFAULT_VAT_PERCENT));
+  const [bk, setBk] = useState<Bookkeeping>({ businessName: "", businessHp: "", email: "", cc: "" });
+  const [bkSaving, setBkSaving] = useState(false);
 
   useEffect(() => {
     fetch("/api/settings").then((r) => r.json()).then((s: Status) => {
       setStatus(s);
       setDbUrl(s.db.url);
       setPublicId(s.payments.publicId);
+      if (s.bookkeeping) setBk(s.bookkeeping);
     });
     setVatInput(String(getVatPercent()));
   }, []);
+
+  const saveBk = async () => {
+    setBkSaving(true);
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(bk),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) { toast.error(j.error || "שגיאה בשמירה"); return; }
+      if (j.bookkeeping) setBk(j.bookkeeping);
+      toast.success("הגדרות הנה״ח נשמרו");
+    } finally {
+      setBkSaving(false);
+    }
+  };
 
   const saveVat = () => {
     const n = parseFloat(vatInput);
@@ -149,6 +169,43 @@ APP_URL="https://paym.lintos-tech.com"`;
           <p className="text-xs text-muted-foreground mt-2">
             נשמר בדפדפן זה בלבד. עדכן כאן כשמע״מ בישראל משתנה.
           </p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-start gap-3">
+            <div className="size-10 rounded-lg bg-accent text-accent-foreground grid place-items-center">
+              <Mail className="size-5" />
+            </div>
+            <div>
+              <CardTitle>שליחת חשבוניות להנהלת חשבונות</CardTitle>
+              <CardDescription>
+                כל חשבונית שנוצרת נשלחת אוטומטית לכתובת זו (עם ה-CC), בצירוף שם העסק וה-ח.פ.
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <Label>שם העסק</Label>
+              <Input value={bk.businessName} onChange={(e) => setBk({ ...bk, businessName: e.target.value })} placeholder="Lintos Technology Solutions" />
+            </div>
+            <div>
+              <Label>ח.פ.</Label>
+              <Input dir="ltr" value={bk.businessHp} onChange={(e) => setBk({ ...bk, businessHp: e.target.value })} placeholder="35714948" />
+            </div>
+            <div>
+              <Label>אימייל הנה״ח (נמען)</Label>
+              <Input dir="ltr" type="email" value={bk.email} onChange={(e) => setBk({ ...bk, email: e.target.value })} placeholder="bk@mail.paperless.tax" />
+            </div>
+            <div>
+              <Label>עותק CC</Label>
+              <Input dir="ltr" type="email" value={bk.cc} onChange={(e) => setBk({ ...bk, cc: e.target.value })} placeholder="you@example.com" />
+            </div>
+          </div>
+          <Button onClick={saveBk} disabled={bkSaving}>{bkSaving ? "שומר..." : "שמור"}</Button>
         </CardContent>
       </Card>
 

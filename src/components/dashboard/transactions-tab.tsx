@@ -15,7 +15,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Topbar } from "./topbar";
-import { RotateCw, Download, Search, Receipt, Undo2, CheckCheck, XCircle, Trash2, Pencil, Copy, ExternalLink, User } from "lucide-react";
+import { RotateCw, Download, Search, Receipt, Undo2, CheckCheck, XCircle, Trash2, Pencil, Copy, ExternalLink, User, Send, CheckCircle2, CircleDashed } from "lucide-react";
 
 interface TxClient { business_name?: string; first_name: string; last_name: string; email: string }
 interface Transaction {
@@ -26,6 +26,8 @@ interface Transaction {
   l4digit?: string; brand?: string; bank?: string;
   payment_url?: string;
   invoice_url?: string;
+  bk_sent?: boolean;
+  bk_sent_at?: string | null;
   client?: TxClient | null;
 }
 
@@ -116,6 +118,23 @@ export function TransactionsTab() {
     const res = await fetch(`/api/transactions?id=${tx.id}`, { method: "DELETE" });
     if (res.ok) { toast.success("נמחק מהלוג"); fetchTransactions(); }
     else toast.error("שגיאה במחיקה");
+  };
+
+  const [bkSending, setBkSending] = useState<string | null>(null);
+  const handleBookkeeping = async (tx: Transaction) => {
+    setBkSending(tx.id);
+    try {
+      const res = await fetch("/api/invoices/bookkeeping", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transId: tx.yaad_id }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) { toast.error(j.error || "שגיאה בשליחה להנה״ח"); return; }
+      toast.success("נשלח להנהלת חשבונות");
+      fetchTransactions();
+    } finally {
+      setBkSending(null);
+    }
   };
 
   const openEdit = (tx: Transaction) => {
@@ -325,7 +344,16 @@ export function TransactionsTab() {
                       {tx.type === "refund" ? "−" : ""}{coinSymbol[tx.coin] || "₪"}{tx.amount.toLocaleString()}
                     </TableCell>
                     <TableCell className="text-xs tabular text-muted-foreground" dir="ltr">{tx.l4digit ? `****${tx.l4digit}` : "—"}</TableCell>
-                    <TableCell className="text-xs tabular text-muted-foreground">{tx.hesh && tx.hesh !== "0" ? `#${tx.hesh}` : "—"}</TableCell>
+                    <TableCell className="text-xs tabular text-muted-foreground whitespace-nowrap">
+                      {tx.hesh && tx.hesh !== "0" ? (
+                        <span className="inline-flex items-center gap-1">
+                          #{tx.hesh}
+                          {tx.bk_sent
+                            ? <CheckCircle2 className="size-3.5 text-emerald-600" aria-label="נשלח להנה״ח" />
+                            : <CircleDashed className="size-3.5 text-amber-500" aria-label="לא נשלח להנה״ח" />}
+                        </span>
+                      ) : "—"}
+                    </TableCell>
                     <TableCell className="text-xs text-muted-foreground tabular whitespace-nowrap">
                       {new Date(tx.created_at).toLocaleDateString("he-IL")}
                       <span className="text-muted-foreground/70"> · </span>
@@ -371,6 +399,16 @@ export function TransactionsTab() {
                             <Receipt className="size-3.5" />
                             {tx.hesh && tx.hesh !== "0" ? `שלח #${tx.hesh}` : "חשבונית"}
                           </Button>
+                          {tx.hesh && tx.hesh !== "0" && (
+                            <Button variant="ghost" size="sm"
+                              className={tx.bk_sent ? "text-emerald-700 hover:text-emerald-800" : "text-slate-600 hover:text-slate-800"}
+                              disabled={bkSending === tx.id}
+                              title={tx.bk_sent ? "נשלח להנה״ח — שלח שוב" : "שלח חשבונית להנהלת חשבונות"}
+                              onClick={() => handleBookkeeping(tx)}>
+                              <Send className="size-3.5" />
+                              {bkSending === tx.id ? "שולח..." : "הנה״ח"}
+                            </Button>
+                          )}
                           <Button variant="ghost" size="sm" className="text-orange-600 hover:text-orange-700"
                             onClick={() => { setRefundAmount(tx.amount.toString()); setRefundDialog({ open: true, tx }); }}>
                             <Undo2 className="size-3.5" />זיכוי

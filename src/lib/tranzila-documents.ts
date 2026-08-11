@@ -76,6 +76,38 @@ export function isInvoicingConfigured(): boolean {
   return getConfig() !== null;
 }
 
+/**
+ * Download an invoice PDF from Tranzila by its retrieval key (the last path
+ * segment of the stored invoice_url). Returns null on any failure.
+ */
+export async function downloadInvoicePdf(retrievalKey: string): Promise<Buffer | null> {
+  const cfg = getConfig();
+  if (!cfg || !retrievalKey) return null;
+  try {
+    const res = await fetch(`https://my.tranzila.com/api/get_financial_document/${retrievalKey}`, {
+      method: "GET",
+      headers: { ...authHeaders(cfg), Accept: "application/pdf" },
+    });
+    if (!res.ok) {
+      console.error("[invoice-pdf] HTTP", res.status);
+      return null;
+    }
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.length < 100) { console.error("[invoice-pdf] too small", buf.length); return null; }
+    return buf;
+  } catch (e) {
+    console.error("[invoice-pdf] error", e);
+    return null;
+  }
+}
+
+/** Extract retrieval key from a stored invoice_url. */
+export function retrievalKeyFromUrl(invoiceUrl: string | null | undefined): string {
+  if (!invoiceUrl) return "";
+  const m = invoiceUrl.match(/get_financial_document\/(.+)$/);
+  return m ? m[1] : "";
+}
+
 export async function createInvoiceReceipt(p: InvoiceParams): Promise<InvoiceResult> {
   const cfg = getConfig();
   if (!cfg) return { ok: false, error: "TRANZILA_APP_KEY/SECRET/TERMINAL not configured" };

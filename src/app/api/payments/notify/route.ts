@@ -4,6 +4,7 @@ import { dbExec, dbOne } from "@/lib/db";
 import { createInvoiceReceipt, isInvoicingConfigured } from "@/lib/tranzila-documents";
 import { clientDisplayName } from "@/lib/client-name";
 import { sendInvoiceEmail, isEmailConfigured } from "@/lib/email";
+import { dispatchInvoiceToBookkeeping } from "@/lib/bookkeeping";
 
 const GUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 const COIN_CODE: Record<number, "ILS" | "USD" | "EUR" | "GBP"> = { 1: "ILS", 2: "USD", 3: "EUR", 4: "GBP" };
@@ -178,6 +179,13 @@ export async function POST(req: NextRequest) {
             UPDATE dbo.transactions
             SET hesh = ${inv.docNumber}, invoice_url = ${invoiceUrl}
             WHERE id = ${matchedRowId}`;
+
+          if (invoiceUrl) {
+            dispatchInvoiceToBookkeeping({
+              txId: matchedRowId, invoiceUrl, docNumber: inv.docNumber,
+              amount: data.amount, currency: data.currency, description: data.description || "תשלום",
+            }).catch((err) => console.error("[notify] bookkeeping dispatch failed:", err));
+          }
 
           if (invoiceUrl && isEmailConfigured()) {
             const COIN_SYM: Record<number, string> = { 1: "ILS", 2: "USD", 3: "EUR", 4: "GBP" };

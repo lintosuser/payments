@@ -82,6 +82,62 @@ export async function sendInvoiceEmail({
   await transporter.sendMail({ from, to, subject, html, text });
 }
 
+/**
+ * Forward an invoice PDF to the bookkeeping inbox (paperless.tax) in Hebrew,
+ * from the business, with the accountant CC'd. PDF is attached so the inbox
+ * can OCR it. Business identity comes from env (BUSINESS_NAME / BUSINESS_HP).
+ */
+export async function sendInvoiceToBookkeeping({
+  docNumber, amount, currency, description, pdf,
+  businessName, businessHp, to, cc,
+}: {
+  docNumber: string; amount: number; currency: string; description: string; pdf: Buffer;
+  businessName: string; businessHp: string; to: string; cc: string;
+}) {
+  const from = `"${businessName}" <${process.env.SMTP_FROM || process.env.SMTP_USER}>`;
+  const sym = currency === "ILS" ? "₪" : currency;
+  const amountFormatted = `${sym}${Number(amount).toLocaleString("he-IL")}`;
+
+  const html = `
+<!DOCTYPE html>
+<html dir="rtl" lang="he">
+<head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:24px;background:#f5f5f5;font-family:Arial,sans-serif;direction:rtl">
+  <div style="max-width:520px;margin:0 auto;background:#fff;border-radius:12px;padding:28px">
+    <p style="margin:0 0 16px;color:#111;font-size:15px">שלום,</p>
+    <p style="margin:0 0 16px;color:#333;font-size:14px">מצורפת חשבונית להנהלת חשבונות.</p>
+    <table style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:20px">
+      <tr><td style="padding:6px 0;color:#888">עסק</td><td style="padding:6px 0;font-weight:600">${businessName}</td></tr>
+      <tr><td style="padding:6px 0;color:#888">ח.פ.</td><td style="padding:6px 0;font-weight:600">${businessHp}</td></tr>
+      <tr><td style="padding:6px 0;color:#888">מספר חשבונית</td><td style="padding:6px 0;font-weight:600">#${docNumber}</td></tr>
+      <tr><td style="padding:6px 0;color:#888">תיאור</td><td style="padding:6px 0">${description}</td></tr>
+      <tr><td style="padding:6px 0;color:#888">סכום</td><td style="padding:6px 0;font-weight:700">${amountFormatted}</td></tr>
+    </table>
+    <p style="margin:0;color:#aaa;font-size:12px">נשלח אוטומטית ממערכת התשלומים של ${businessName} (ח.פ. ${businessHp}).</p>
+  </div>
+</body></html>`;
+
+  const text = `שלום,
+
+מצורפת חשבונית להנהלת חשבונות.
+
+עסק: ${businessName}
+ח.פ.: ${businessHp}
+מספר חשבונית: #${docNumber}
+תיאור: ${description}
+סכום: ${amountFormatted}
+
+נשלח אוטומטית ממערכת התשלומים של ${businessName} (ח.פ. ${businessHp}).`;
+
+  const transporter = getTransporter();
+  await transporter.sendMail({
+    from, to, cc,
+    subject: `חשבונית #${docNumber} — ${businessName} (ח.פ. ${businessHp})`,
+    html, text,
+    attachments: [{ filename: `invoice-${docNumber}.pdf`, content: pdf, contentType: "application/pdf" }],
+  });
+}
+
 export async function sendPaymentLinkEmail({
   to, clientName, paymentUrl, amount, currency, info,
 }: {

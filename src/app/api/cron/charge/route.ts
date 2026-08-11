@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { timingSafeEqual } from "crypto";
 import { getProvider } from "@/lib/payment";
 import { buildExpdate } from "@/lib/tranzila";
-import { db, dbExec } from "@/lib/db";
+import { db, dbExec, dbOne } from "@/lib/db";
 import { createInvoiceReceipt, isInvoicingConfigured } from "@/lib/tranzila-documents";
+import { dispatchInvoiceToBookkeeping } from "@/lib/bookkeeping";
 import { logAudit, getIp } from "@/lib/audit";
 
 function safeCompare(a: string, b: string): boolean {
@@ -106,10 +107,17 @@ export async function POST(req: NextRequest) {
               const invoiceUrl = inv.retrievalKey
                 ? `https://my.tranzila.com/api/get_financial_document/${inv.retrievalKey}`
                 : "";
-              await dbExec`
+              const updated = await dbOne<{ id: string }>`
                 UPDATE dbo.transactions
                 SET hesh = ${inv.docNumber}, invoice_url = ${invoiceUrl}
+                OUTPUT inserted.id
                 WHERE yaad_id = ${result.providerTxId || ''} AND client_id = ${sub.client_id}`;
+              if (updated?.id && invoiceUrl) {
+                await dispatchInvoiceToBookkeeping({
+                  txId: updated.id, invoiceUrl, docNumber: inv.docNumber,
+                  amount: sub.amount, currency: sub.coin, description: sub.info,
+                });
+              }
             }
           } catch (invErr) {
             console.error("[cron/charge] invoice error for sub", sub.id, invErr);

@@ -18,8 +18,14 @@ interface Transaction {
   info: string;
   type: string;
   created_at: string;
+  client?: { business_name?: string; first_name?: string; last_name?: string; email?: string } | null;
 }
 interface Client { id: string }
+
+function clientLabel(c: Transaction["client"]): string {
+  if (!c) return "";
+  return (c.business_name?.trim() || `${c.first_name || ""} ${c.last_name || ""}`.trim() || "");
+}
 
 const coinSymbol: Record<number, string> = { 1: "₪", 2: "$", 3: "€", 4: "£" };
 const statusLabel: Record<string, string> = {
@@ -151,9 +157,12 @@ export function OverviewTab({ onNavigate }: { onNavigate: (k: NavKey) => void })
                       {statusLabel[tx.status] || tx.status}
                     </Badge>
                     <div className="min-w-0">
-                      <div className="text-sm font-medium truncate">{tx.info}</div>
-                      <div className="text-xs text-muted-foreground tabular">
-                        {tx.yaad_id ? `#${tx.yaad_id}` : "ממתין"} · {new Date(tx.created_at).toLocaleDateString("he-IL")}
+                      <div className="text-sm font-medium truncate">
+                        {clientLabel(tx.client) || tx.info}
+                      </div>
+                      <div className="text-xs text-muted-foreground truncate">
+                        {clientLabel(tx.client) ? `${tx.info} · ` : ""}
+                        <span className="tabular">{tx.yaad_id ? `#${tx.yaad_id}` : "ממתין"} · {new Date(tx.created_at).toLocaleDateString("he-IL")}</span>
                       </div>
                     </div>
                   </div>

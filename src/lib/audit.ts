@@ -7,7 +7,7 @@ export type AuditAction =
   | "payment.create_link" | "payment.charge" | "payment.refund" | "payment.cancel" | "payment.commit"
   | "transaction.update" | "transaction.delete"
   | "subscription.create" | "subscription.update" | "subscription.toggle" | "subscription.delete"
-  | "invoice.create" | "invoice.resend"
+  | "invoice.create" | "invoice.resend" | "invoice.bookkeeping_send"
   | "cron.charge_run";
 
 /**

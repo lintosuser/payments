@@ -13,6 +13,26 @@ function genShortCode(): string {
   return s;
 }
 
+/**
+ * Given a chosen first-charge date (YYYY-MM-DD) and a monthly frequency,
+ * return the first occurrence strictly after today, as YYYY-MM-DD. The
+ * initial payment covers the current period, so a past/today date is rolled
+ * forward by `freq` months until it lands in the future.
+ */
+function firstFutureCharge(firstDate: string, freq: number): string {
+  const [y, m, d] = firstDate.split("-").map(Number);
+  if (!y || !m || !d) return firstDate;
+  const today = new Date();
+  const todayUTC = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
+  let dt = new Date(Date.UTC(y, m - 1, d));
+  let guard = 0;
+  while (dt.getTime() <= todayUTC && guard < 240) {
+    dt = new Date(Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth() + (freq || 1), dt.getUTCDate()));
+    guard++;
+  }
+  return dt.toISOString().slice(0, 10);
+}
+
 interface ClientRow {
   id: string;
   business_name: string;
@@ -41,7 +61,13 @@ export async function POST(req: NextRequest) {
     const appUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || "";
 
     const hkFreq = body.hk ? (parseInt(body.freq) || null) : null;
-    const hkDate = body.hk && body.firstDate ? body.firstDate : null;
+    // The initial payment (this link) IS the first charge. The recurring
+    // next_charge must be strictly in the FUTURE — otherwise the daily cron
+    // charges the client again the same month. If the chosen firstDate has
+    // already passed, roll it forward by `freq` months until it's after today.
+    const hkDate = body.hk && body.firstDate
+      ? firstFutureCharge(body.firstDate, hkFreq || 1)
+      : null;
     const shortCode = genShortCode();
 
     const inserted = await dbOne<{ id: string }>`

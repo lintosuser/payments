@@ -3,6 +3,7 @@ import { dbExec, dbOne } from "@/lib/db";
 import { createInvoiceReceipt, isInvoicingConfigured } from "@/lib/tranzila-documents";
 import { clientDisplayName } from "@/lib/client-name";
 import { sendInvoiceEmail, isEmailConfigured } from "@/lib/email";
+import { dispatchInvoiceToBookkeeping } from "@/lib/bookkeeping";
 
 /**
  * Called by the /pay/[code] page after Tranzila's Hosted Fields fields.charge()
@@ -96,6 +97,12 @@ export async function POST(req: NextRequest) {
             UPDATE dbo.transactions
             SET hesh = ${inv.docNumber}, invoice_url = ${invoiceUrl}
             WHERE id = ${tx.id}`;
+          if (invoiceUrl) {
+            await dispatchInvoiceToBookkeeping({
+              txId: tx.id, invoiceUrl, docNumber: inv.docNumber,
+              amount: tx.amount, currency: tx.coin, description: tx.info || "תשלום",
+            });
+          }
           if (invoiceUrl && isEmailConfigured()) {
             await sendInvoiceEmail({
               to: client.email,
