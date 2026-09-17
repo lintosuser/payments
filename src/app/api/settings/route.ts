@@ -1,14 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { getProviderStatus } from "@/lib/payment";
-import { getBookkeepingSettings, setBookkeepingSettings } from "@/lib/app-settings";
+import { getBookkeepingSettings, setBookkeepingSettings, getVatPercent, setVatPercent } from "@/lib/app-settings";
 
 export async function GET() {
   try {
     await requireUser();
     const payments = getProviderStatus();
     const bookkeeping = await getBookkeepingSettings();
+    const vatPercent = await getVatPercent();
     return NextResponse.json({
+      vatPercent,
       db: {
         provider: "SQL Server",
         configured: Boolean(process.env.DB_HOST && process.env.DB_NAME && process.env.DB_USER && process.env.DB_PASSWORD),
@@ -41,7 +43,19 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: "אימייל CC לא תקין" }, { status: 400 });
     }
 
+    if (b.vatPercent !== undefined) {
+      const n = parseFloat(b.vatPercent);
+      if (!Number.isFinite(n) || n < 0 || n > 100) {
+        return NextResponse.json({ error: "אחוז מע״מ לא תקין (0-100)" }, { status: 400 });
+      }
+      await setVatPercent(n);
+    }
+
     await setBookkeepingSettings({ email, cc, businessName, businessHp });
-    return NextResponse.json({ ok: true, bookkeeping: await getBookkeepingSettings() });
+    return NextResponse.json({
+      ok: true,
+      bookkeeping: await getBookkeepingSettings(),
+      vatPercent: await getVatPercent(),
+    });
   } catch (e) { if (e instanceof Response) return e; throw e; }
 }

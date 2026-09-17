@@ -11,13 +11,15 @@ const COIN_SYMBOL: Record<string, string> = { "1": "₪", "2": "$", "3": "€", 
 
 function SuccessContent() {
   const params = useSearchParams();
-  const [state, setState] = useState<"loading" | Verified>("loading");
+  const isCard = params.get("card") === "1";
+  const [state, setState] = useState<"loading" | Verified>(isCard ? { ok: true, result: {} } : "loading");
 
   useEffect(() => {
+    if (isCard) return; // card-update: nothing to verify
     fetch(`/api/payments/verify?${params.toString()}`)
       .then((r) => r.json()).then((d: Verified) => setState(d))
       .catch(() => setState({ ok: false, result: {} }));
-  }, [params]);
+  }, [params, isCard]);
 
   const coinId = params.get("CoinId") || "1";
   const isHebrew = coinId === "1" || !coinId;
@@ -34,8 +36,8 @@ function SuccessContent() {
 
   const t = {
     loading: isHebrew ? "מאמת תשלום..." : "Verifying payment...",
-    title: isHebrew ? "התשלום הצליח!" : "Payment Successful!",
-    thanks: isHebrew ? "תודה רבה על תשלומך" : "Thank you for your payment",
+    title: isCard ? (isHebrew ? "הכרטיס נשמר!" : "Card saved!") : (isHebrew ? "התשלום הצליח!" : "Payment Successful!"),
+    thanks: isCard ? (isHebrew ? "פרטי האשראי עודכנו בהצלחה" : "Card details updated") : (isHebrew ? "תודה רבה על תשלומך" : "Thank you for your payment"),
     txLabel: isHebrew ? "מספר עסקה" : "Transaction ID",
     invLabel: isHebrew ? "חשבונית" : "Invoice",
     note: isHebrew

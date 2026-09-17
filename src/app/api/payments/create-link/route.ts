@@ -60,46 +60,59 @@ export async function POST(req: NextRequest) {
     // deployments working.
     const appUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || "";
 
-    const hkFreq = body.hk ? (parseInt(body.freq) || null) : null;
+    // Card-update link: tokenize a (possibly new) card WITHOUT charging, via
+    // a J2 Validate transaction. No hk, no invoice — just saves a fresh token.
+    const cardUpdate = Boolean(body.cardUpdate);
+
+    const hkFreq = !cardUpdate && body.hk ? (parseInt(body.freq) || null) : null;
     // The initial payment (this link) IS the first charge. The recurring
     // next_charge must be strictly in the FUTURE — otherwise the daily cron
     // charges the client again the same month. If the chosen firstDate has
     // already passed, roll it forward by `freq` months until it's after today.
-    const hkDate = body.hk && body.firstDate
+    const hkDate = !cardUpdate && body.hk && body.firstDate
       ? firstFutureCharge(body.firstDate, hkFreq || 1)
       : null;
     const shortCode = genShortCode();
+    const txType = cardUpdate ? "card_update" : "payment";
+    // Validate transaction still needs a sum for the handshake; use 1 as a
+    // nominal, non-captured amount when the caller didn't specify.
+    const txAmount = cardUpdate ? (body.amount || 1) : body.amount;
+    const txInfo = cardUpdate ? (body.info || "עדכון פרטי אשראי") : body.info;
 
     const inserted = await dbOne<{ id: string }>`
       INSERT INTO dbo.transactions (yaad_id, client_id, amount, coin, status, info, type, payment_url, owner_id, hk_freq_months, hk_next_charge, short_code)
       OUTPUT inserted.id
-      VALUES ('', ${body.clientId || null}, ${body.amount}, ${body.coin || 1},
-              'pending', ${body.info}, 'payment', '', ${user.id},
+      VALUES ('', ${body.clientId || null}, ${txAmount}, ${body.coin || 1},
+              'pending', ${txInfo}, ${txType}, '', ${user.id},
               ${hkFreq}, ${hkDate}, ${shortCode})`;
     const txId = inserted?.id || "";
 
-    const { paymentUrl } = await provider.createPaymentLink({
-      amount: body.amount,
-      info: body.info,
-      currency: body.coin || 1,
-      tash: body.tash,
-      email: client?.email || body.email,
-      phone: client?.phone || client?.cell || body.phone || body.cell,
-      contact: client
-        ? clientDisplayName(client)
-        : (body.businessName?.trim() || `${body.clientName || ""} ${body.clientLName || ""}`.trim()),
-      myid: txId || undefined,
-      customerId: client?.user_id || body.userId || undefined,
-      // Save card token for future charges — only meaningful when we have a
-      // client to attach the token to. Caller can disable explicitly.
-      tokenize: body.tokenize ?? Boolean(body.clientId),
-      successUrl: `${appUrl}/api/payments/return?target=success`,
-      failUrl: `${appUrl}/api/payments/return?target=fail`,
-      notifyUrl: `${appUrl}/api/payments/notify`,
-    });
-
-    if (txId) {
-      await dbExec`UPDATE dbo.transactions SET payment_url = ${paymentUrl} WHERE id = ${txId}`;
+    // The legacy Tranzila iframe URL is only a reference — the real flow is
+    // our /pay hosted-fields page. Skip it entirely for card-update links
+    // (no amount to build a URL from).
+    let paymentUrl = "";
+    if (!cardUpdate) {
+      const built = await provider.createPaymentLink({
+        amount: txAmount,
+        info: txInfo,
+        currency: body.coin || 1,
+        tash: body.tash,
+        email: client?.email || body.email,
+        phone: client?.phone || client?.cell || body.phone || body.cell,
+        contact: client
+          ? clientDisplayName(client)
+          : (body.businessName?.trim() || `${body.clientName || ""} ${body.clientLName || ""}`.trim()),
+        myid: txId || undefined,
+        customerId: client?.user_id || body.userId || undefined,
+        tokenize: body.tokenize ?? Boolean(body.clientId),
+        successUrl: `${appUrl}/api/payments/return?target=success`,
+        failUrl: `${appUrl}/api/payments/return?target=fail`,
+        notifyUrl: `${appUrl}/api/payments/notify`,
+      });
+      paymentUrl = built.paymentUrl;
+      if (txId) {
+        await dbExec`UPDATE dbo.transactions SET payment_url = ${paymentUrl} WHERE id = ${txId}`;
+      }
     }
 
     await logAudit({

@@ -124,7 +124,14 @@ export async function POST(req: NextRequest) {
           }
         }
       } else {
-        console.warn("[cron/charge] charge failed for sub", sub.id, result.responseCode);
+        // Advance next_charge on failure too, so a declined card is retried
+        // only ONCE per cycle — not hammered every single day. The failed
+        // transaction row + עסקאות indicator surface it for manual follow-up.
+        await dbExec`
+          UPDATE dbo.subscriptions
+          SET next_charge = DATEADD(MONTH, ${sub.freq_months}, next_charge)
+          WHERE id = ${sub.id}`;
+        console.warn("[cron/charge] charge failed for sub", sub.id, result.responseCode, "- next_charge advanced");
       }
 
       results.push({ id: sub.id, client: sub.client_name, ok: result.success });

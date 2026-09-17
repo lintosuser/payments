@@ -32,6 +32,19 @@ interface Transaction {
 }
 
 const coinSymbol: Record<number, string> = { 1: "₪", 2: "$", 3: "€", 4: "£" };
+
+// Common Tranzila decline reasons (Hebrew). Fallback to generic + code.
+const ccodeReason: Record<string, string> = {
+  "001": "כרטיס חסום", "002": "כרטיס גנוב", "003": "יש להתקשר לחברת האשראי לאישור",
+  "004": "הכרטיס סורב ע״י חברת האשראי", "005": "כרטיס מזויף", "006": "ת.ז/CVV שגוי",
+  "008": "אין יתרה מספקת", "015": "כרטיס פג תוקף", "017": "סוג אשראי לא מאושר",
+  "026": "מספר ת.ז שגוי", "033": "כרטיס לא תקין", "036": "חריגה ממסגרת אשראי",
+  "039": "מספר כרטיס שגוי", "057": "עסקה לא מאושרת", "061": "מעל תקרת המסוף",
+};
+function reasonFor(code?: string): string {
+  if (!code) return "";
+  return ccodeReason[code] || `נדחה (קוד ${code})`;
+}
 const statusLabel: Record<string, string> = {
   approved: "אושר", pending: "ממתין", cancelled: "בוטל",
   refunded: "זוכה", postponed: "דחוי", failed: "נכשל",
@@ -118,6 +131,25 @@ export function TransactionsTab() {
     const res = await fetch(`/api/transactions?id=${tx.id}`, { method: "DELETE" });
     if (res.ok) { toast.success("נמחק מהלוג"); fetchTransactions(); }
     else toast.error("שגיאה במחיקה");
+  };
+
+  const [retrying, setRetrying] = useState<string | null>(null);
+  const handleRetry = async (tx: Transaction) => {
+    if (!confirm(`לנסות לחייב שוב ${coinSymbol[tx.coin] || "₪"}${tx.amount} מהכרטיס השמור של הלקוח?`)) return;
+    setRetrying(tx.id);
+    try {
+      const res = await fetch("/api/transactions/retry", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ txId: tx.id }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) { toast.error(j.error || "שגיאה בניסיון חוזר"); return; }
+      if (j.ok) toast.success("החיוב בוצע בהצלחה");
+      else toast.error(`נכשל שוב: ${j.message || reasonFor(j.responseCode)}`);
+      fetchTransactions();
+    } finally {
+      setRetrying(null);
+    }
   };
 
   const [bkSending, setBkSending] = useState<string | null>(null);
@@ -334,9 +366,15 @@ export function TransactionsTab() {
                         : <span className="text-muted-foreground">—</span>}
                     </TableCell>
                     <TableCell>
-                      <Badge variant="secondary" className={`ring-1 ${statusTone(tx.status)}`}>
+                      <Badge variant="secondary" className={`ring-1 ${statusTone(tx.status)}`}
+                        title={tx.status === "failed" ? reasonFor(tx.ccode) : undefined}>
                         {statusLabel[tx.status] || tx.status}
                       </Badge>
+                      {tx.status === "failed" && (
+                        <div className="text-[10px] text-rose-600 mt-0.5 max-w-[130px] truncate" title={reasonFor(tx.ccode)}>
+                          {reasonFor(tx.ccode)}
+                        </div>
+                      )}
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">{typeLabel[tx.type] || tx.type}</TableCell>
                     <TableCell className="text-sm max-w-[220px] truncate">{tx.info}</TableCell>
@@ -421,6 +459,15 @@ export function TransactionsTab() {
                       {tx.status === "postponed" && tx.yaad_id && (
                         <Button variant="ghost" size="sm" className="text-sky-600 hover:text-sky-700" onClick={() => setCommitDialog({ open: true, tx })}>
                           <CheckCheck className="size-3.5" />אשר
+                        </Button>
+                      )}
+                      {tx.status === "failed" && tx.client_id && (
+                        <Button variant="ghost" size="sm" className="text-sky-700 hover:text-sky-800"
+                          disabled={retrying === tx.id}
+                          title="נסה לחייב שוב מהכרטיס השמור"
+                          onClick={() => handleRetry(tx)}>
+                          <RotateCw className="size-3.5" />
+                          {retrying === tx.id ? "מחייב..." : "נסה שוב"}
                         </Button>
                       )}
                       {tx.status === "pending" && (

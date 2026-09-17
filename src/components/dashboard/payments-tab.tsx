@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Topbar } from "./topbar";
-import { Copy, ExternalLink, Link2, Mail, MessageCircle, Smartphone } from "lucide-react";
+import { Copy, ExternalLink, Link2, Mail, MessageCircle, Smartphone, CreditCard } from "lucide-react";
 
 import { clientDisplayName, hasValidName } from "@/lib/client-name";
 import { getVatPercent, DEFAULT_VAT_PERCENT } from "./settings-tab";
@@ -81,6 +81,22 @@ export function PaymentsTab() {
       setPaymentUrl(data.paymentUrl);
       setShortUrl(data.shortUrl || "");
       toast.success(data.emailSent ? "הקישור מוכן — נשלח גם במייל ✓" : "הקישור מוכן");
+    } else toast.error(data.error || "שגיאה ביצירת קישור");
+    setLoading(false);
+  };
+
+  const handleCardUpdate = async () => {
+    if (!selectedClient) { toast.error("בחר לקוח קיים לעדכון כרטיס"); return; }
+    setLoading(true); setPaymentUrl("");
+    const res = await fetch("/api/payments/create-link", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ clientId: selectedClient, cardUpdate: true, coin: parseInt(form.coin), sendemail: form.sendemail }),
+    });
+    const data = await res.json();
+    if (data.shortUrl || data.paymentUrl) {
+      setPaymentUrl(data.paymentUrl || data.shortUrl);
+      setShortUrl(data.shortUrl || "");
+      toast.success("קישור עדכון כרטיס מוכן");
     } else toast.error(data.error || "שגיאה ביצירת קישור");
     setLoading(false);
   };
@@ -242,6 +258,12 @@ export function PaymentsTab() {
               <Button type="submit" className="w-full gap-2" size="lg" disabled={loading}>
                 <Link2 className="size-4" />
                 {loading ? "מפיק קישור..." : "הפק קישור תשלום"}
+              </Button>
+              <Button type="button" variant="outline" className="w-full gap-2" disabled={loading}
+                onClick={handleCardUpdate}
+                title="הלקוח יזין כרטיס שיישמר לחיובים עתידיים — ללא חיוב כעת">
+                <CreditCard className="size-4" />
+                קישור עדכון כרטיס (ללא חיוב)
               </Button>
             </form>
           </CardContent>

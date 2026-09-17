@@ -26,6 +26,29 @@ const DEFAULTS: BookkeepingSettings = {
   cc: process.env.BOOKKEEPING_CC || "tomer.deri78@gmail.com",
 };
 
+const VAT_KEY = "vat_percent";
+export const DEFAULT_VAT = 18; // Israel standard VAT since 2025-01-01
+
+/** Current VAT percent for invoices (server-side source of truth). */
+export async function getVatPercent(): Promise<number> {
+  try {
+    const rows = await db<{ sval: string }>`SELECT sval FROM dbo.app_settings WHERE skey = ${VAT_KEY}`;
+    const n = rows[0] ? parseFloat(rows[0].sval) : NaN;
+    return Number.isFinite(n) && n >= 0 && n <= 100 ? n : DEFAULT_VAT;
+  } catch {
+    return DEFAULT_VAT;
+  }
+}
+
+export async function setVatPercent(n: number): Promise<void> {
+  await dbExec`
+    MERGE dbo.app_settings AS t
+    USING (SELECT ${VAT_KEY} AS skey, ${String(n)} AS sval) AS src
+    ON t.skey = src.skey
+    WHEN MATCHED THEN UPDATE SET sval = src.sval, updated_at = SYSUTCDATETIME()
+    WHEN NOT MATCHED THEN INSERT (skey, sval) VALUES (src.skey, src.sval);`;
+}
+
 export async function getBookkeepingSettings(): Promise<BookkeepingSettings> {
   try {
     const rows = await db<{ skey: string; sval: string }>`

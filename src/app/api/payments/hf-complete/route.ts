@@ -30,13 +30,16 @@ export async function POST(req: NextRequest) {
   const tx = await dbOne<{
     id: string; client_id: string | null; amount: number; coin: number; info: string;
     hk_freq_months: number | null; hk_next_charge: string | null; status: string;
+    type: string;
   }>`
-    SELECT id, client_id, amount, coin, info, hk_freq_months, hk_next_charge, status
+    SELECT id, client_id, amount, coin, info, hk_freq_months, hk_next_charge, status, type
     FROM dbo.transactions WHERE short_code = ${code}`;
   if (!tx) return NextResponse.json({ error: "not found" }, { status: 404 });
   if (tx.status !== "pending") {
     return NextResponse.json({ ok: true, dedup: true, status: tx.status });
   }
+
+  const isCardUpdate = tx.type === "card_update";
 
   await dbExec`
     UPDATE dbo.transactions
@@ -56,6 +59,12 @@ export async function POST(req: NextRequest) {
           token_exp_year = ${expiryYear || null},
           l4digit = ${last4 || null}
       WHERE id = ${tx.client_id}`;
+  }
+
+  // Card-update link: only saved the token — no subscription, invoice, or
+  // bookkeeping. Done.
+  if (isCardUpdate) {
+    return NextResponse.json({ ok: true, txId: tx.id, cardUpdated: true });
   }
 
   if (tx.client_id && tx.hk_freq_months && tx.hk_next_charge) {

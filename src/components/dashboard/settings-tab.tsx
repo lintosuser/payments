@@ -31,6 +31,7 @@ type Status = {
     available: { name: ProviderName; configured: boolean }[];
   };
   bookkeeping?: Bookkeeping;
+  vatPercent?: number;
 };
 
 const PROVIDER_LABEL: Record<ProviderName, string> = {
@@ -54,6 +55,10 @@ export function SettingsTab() {
       setDbUrl(s.db.url);
       setPublicId(s.payments.publicId);
       if (s.bookkeeping) setBk(s.bookkeeping);
+      if (typeof s.vatPercent === "number") {
+        setVatInput(String(s.vatPercent));
+        try { localStorage.setItem(VAT_STORAGE_KEY, String(s.vatPercent)); } catch {}
+      }
     });
     setVatInput(String(getVatPercent()));
   }, []);
@@ -73,14 +78,19 @@ export function SettingsTab() {
     }
   };
 
-  const saveVat = () => {
+  const saveVat = async () => {
     const n = parseFloat(vatInput);
     if (!Number.isFinite(n) || n < 0 || n > 100) {
       toast.error("אחוז מע״מ לא תקין (0-100)");
       return;
     }
-    localStorage.setItem(VAT_STORAGE_KEY, String(n));
-    toast.success(`מע״מ עודכן ל-${n}%`);
+    const res = await fetch("/api/settings", {
+      method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ vatPercent: n }),
+    });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) { toast.error(j.error || "שגיאה בשמירת מע״מ"); return; }
+    try { localStorage.setItem(VAT_STORAGE_KEY, String(n)); } catch {}
+    toast.success(`מע״מ עודכן ל-${n}% (חל על חשבוניות ומסמכים)`);
   };
 
   const active: ProviderName = status?.payments.active || "tranzila";

@@ -17,6 +17,7 @@
 //   On failure: status_code != 0, status_msg = error message.
 
 import crypto from "node:crypto";
+import { getVatPercent } from "@/lib/app-settings";
 
 interface DocsConfig {
   appKey: string;
@@ -116,6 +117,7 @@ export async function createInvoiceReceipt(p: InvoiceParams): Promise<InvoiceRes
   const docDate = new Date().toISOString().slice(0, 10); // yyyy-mm-dd
   const last4Int = Number((p.cardLast4 || "").replace(/\D/g, "")) || 0;
   const txnIndex = Number((p.tranzilaIndex || "").replace(/\D/g, "")) || 0;
+  const vatPercent = await getVatPercent();
 
   const body = {
     terminal_name: cfg.terminal,
@@ -125,7 +127,7 @@ export async function createInvoiceReceipt(p: InvoiceParams): Promise<InvoiceRes
     document_language: p.currency === "ILS" ? "heb" : "eng",
     response_language: "heb",
     document_currency_code: p.currency,
-    vat_percent: 17,
+    vat_percent: vatPercent,
     client_name: p.clientName || "",
     client_email: p.clientEmail,
     ...(p.clientId ? { client_id: p.clientId } : {}),

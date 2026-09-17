@@ -18,6 +18,7 @@ interface HandshakeData {
   phone: string;
   txId: string;
   hk: boolean;
+  mode?: "charge" | "update";
 }
 
 // Types for Tranzila's Hosted Fields SDK (loaded from thostedf.js).
@@ -151,6 +152,7 @@ export default function PayPage() {
 
     // Minimal payload — Tranzila terminals vary in which optional fields they
     // accept. Amount is sent as a fixed-2 string (matches Station's payload).
+    const isUpdate = handshake.mode === "update";
     const payload: Record<string, unknown> = {
       terminal_name: handshake.terminalName,
       thtk: handshake.thtk,
@@ -158,6 +160,8 @@ export default function PayPage() {
       currency_code: CURRENCY_CODE[handshake.coin] || "ILS",
       tokenize: true,
       response_language: handshake.coin === 1 ? "Hebrew" : "English",
+      // J2 Validate: verify + tokenize the card WITHOUT charging.
+      ...(isUpdate ? { tran_mode: "N" } : {}),
     };
     if (cardholderName || handshake.contact) payload.contact = cardholderName || handshake.contact;
     if (handshake.email) payload.email = handshake.email;
@@ -234,6 +238,11 @@ export default function PayPage() {
         });
         const j = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(j.error || "server rejected");
+        // Card-update flow: nothing was charged — show a simple saved screen.
+        if (isUpdate || j.cardUpdated) {
+          router.replace(`/payment/success?card=1&CoinId=${handshake.coin}`);
+          return;
+        }
         // Success — include the fields /api/payments/verify parses via
         // provider.parseRedirect (needs Response=000 to consider it success).
         const successParams = new URLSearchParams({
@@ -284,10 +293,19 @@ export default function PayPage() {
         ) : (
           <>
             <div className="bg-slate-50 border-b border-slate-100 px-6 py-4 text-center">
-              <p className="text-xs text-slate-500 mb-1">{handshake.info || (isHebrew ? "תשלום" : "Payment")}</p>
-              <p className="text-3xl font-extrabold text-slate-800 tracking-tight" dir="ltr">{amountStr}</p>
-              {handshake.hk && (
-                <p className="mt-1 text-[11px] text-emerald-700 font-medium">{isHebrew ? "כולל הוראת קבע" : "Includes standing order"}</p>
+              {handshake.mode === "update" ? (
+                <>
+                  <p className="text-lg font-bold text-slate-800">{isHebrew ? "עדכון פרטי אשראי" : "Update card details"}</p>
+                  <p className="mt-1 text-[11px] text-slate-500">{isHebrew ? "הכרטיס יישמר לחיובים עתידיים — ללא חיוב כעת" : "Card saved for future charges — no charge now"}</p>
+                </>
+              ) : (
+                <>
+                  <p className="text-xs text-slate-500 mb-1">{handshake.info || (isHebrew ? "תשלום" : "Payment")}</p>
+                  <p className="text-3xl font-extrabold text-slate-800 tracking-tight" dir="ltr">{amountStr}</p>
+                  {handshake.hk && (
+                    <p className="mt-1 text-[11px] text-emerald-700 font-medium">{isHebrew ? "כולל הוראת קבע" : "Includes standing order"}</p>
+                  )}
+                </>
               )}
             </div>
 
@@ -348,7 +366,9 @@ export default function PayPage() {
                 className="w-full mt-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-3 text-sm flex items-center justify-center gap-2 transition-colors"
               >
                 {state === "submitting" ? (
-                  <><Loader2 className="size-4 animate-spin" />{isHebrew ? "מבצע חיוב..." : "Processing..."}</>
+                  <><Loader2 className="size-4 animate-spin" />{isHebrew ? "מעבד..." : "Processing..."}</>
+                ) : handshake?.mode === "update" ? (
+                  <><Lock className="size-4" />{isHebrew ? "שמור כרטיס" : "Save card"}</>
                 ) : (
                   <><Lock className="size-4" />{isHebrew ? `שלם ${amountStr}` : `Pay ${amountStr}`}</>
                 )}

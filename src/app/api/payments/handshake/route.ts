@@ -31,8 +31,8 @@ export async function GET(req: NextRequest) {
   const code = new URL(req.url).searchParams.get("code") || "";
   if (!code) return NextResponse.json({ error: "code required" }, { status: 400 });
 
-  const tx = await dbOne<TxRow>`
-    SELECT t.id, t.amount, t.coin, t.info, t.status, t.hk_freq_months,
+  const tx = await dbOne<TxRow & { type: string }>`
+    SELECT t.id, t.amount, t.coin, t.info, t.status, t.hk_freq_months, t.type,
            c.first_name as client_first_name, c.last_name as client_last_name,
            c.business_name as client_business_name,
            c.email as client_email, c.cell as client_phone
@@ -97,5 +97,6 @@ export async function GET(req: NextRequest) {
     phone: tx.client_phone || "",
     txId: tx.id,
     hk: Boolean(tx.hk_freq_months),
+    mode: tx.type === "card_update" ? "update" : "charge",
   });
 }
